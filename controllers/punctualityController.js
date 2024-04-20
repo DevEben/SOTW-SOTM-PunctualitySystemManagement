@@ -14,11 +14,7 @@ require('dotenv').config();
 // Function to handle the attendance of students
 const checkIn = async (req, res) => {
     try {
-        // Validate user input
-        // const { error } = validateUserLocation(req.body);
-        // if (error) {
-        //     return res.status(400).json({ message: error.details[0].message });
-        // }
+
         const today = new Date();
 
         //Checks if that day is Monday, Wednesday, or Friday (Days for classes)
@@ -30,19 +26,6 @@ const checkIn = async (req, res) => {
             }
 
             const { latitude, longitude } = req.body;
-
-
-            // // Call Mapbox Geocoding API to get place name
-            // const accessToken = process.env.accessToken;
-            // const geocodingUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${accessToken}`;
-
-            // const response = await fetch(geocodingUrl);
-            // if (!response.ok) {
-            //     return res.status(400).json({message: 'Failed to fetch place name'});
-            // }
-            // const data = await response.json();
-            // const location = data.features[0].place_name;
-
 
             const apiUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`;
 
@@ -95,6 +78,7 @@ const checkIn = async (req, res) => {
             // Convert Jimp image to buffer
             const modifiedImageBuffer = await jimpImage.getBufferAsync(Jimp.MIME_JPEG); // or use the appropriate MIME type for your image format
 
+            //Check if the user has already uploaded/checkIn that day
             const checkInStatus = await dataModel.findOne({ date: date });
             if (checkInStatus && checkInStatus.userId === userId) {
                 return res.status(400).json({
@@ -106,7 +90,7 @@ const checkIn = async (req, res) => {
             const cloudinaryUpload = await cloudinary.uploader.upload_stream({ folder: "AttendanceData-Image" },
                 (error, result) => {
                     if (error) {
-                        return res.status(500).json({ message: 'An error occurred while uploading the image' });
+                        return res.status(500).json({ message: 'An error occurred while uploading the image' + error.message });
                     }
                     // Delete the temporary file
                     fs.unlinkSync(image.tempFilePath);
@@ -124,7 +108,6 @@ const checkIn = async (req, res) => {
                     } else {
                         score = 0;
                     }
-
 
                     // Save attendance data
                     const userData = new dataModel({
@@ -163,9 +146,123 @@ const checkIn = async (req, res) => {
 
 
 
-
-// Endpoint to get the assessment for each student by the reviewer
+// Function to get the assessment for a students by the reviewer
 const assessmentData = async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        const user = await userModel.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+        // Get the current date
+        const currentDate = new Date();
+
+        // Calculate the start of the current week
+        const startOfWeek = new Date(currentDate);
+        startOfWeek.setDate(currentDate.getDate() - currentDate.getDay());
+
+        // Calculate the end of the current week
+        const endOfWeek = new Date(startOfWeek);
+        endOfWeek.setDate(startOfWeek.getDate() + 6);
+        endOfWeek.setHours(23, 59, 59, 999);
+
+        //Check if it's Friday or Weekend to review punctuality score
+        if (currentDate.getDay() < 5) {
+            return res.status(400).json({
+                message: "Sorry you can't review punctuality score till Friday or Saturday"
+            })
+        }
+
+        const checkAssessment = await assessmentModel.findOne({
+            userId: userId,
+            weekStart: startOfWeek.toISOString().split('T')[0]
+        });
+        if (checkAssessment) {
+            return res.status(400).json({
+                message: "Sorry! you've already reviewed punctuality score for this week for this student"
+            })
+        }
+
+        // Fetch attendance data for the current week
+        const attendanceData = await dataModel.find({
+            userId: userId,
+            date: {
+                $gte: startOfWeek.toISOString().split('T')[0],
+                $lt: endOfWeek.toISOString().split('T')[0]
+            }
+        });
+
+        // Function to delete image by public_id
+        const deleteImage = async (public_id) => {
+            try {
+                const result = await cloudinary.uploader.destroy(public_id);
+            } catch (error) {
+                console.error('Error deleting image:', error.message);
+            }
+        };
+
+        // Aggregate the attendance data to calculate total score and count for each user
+        const aggregatedData = attendanceData.reduce((acc, curr) => {
+            const { userId, punctualityScore, image } = curr;
+
+            // If userId doesn't exist in accumulator, initialize it with totalScore and count as 0
+            if (!acc[userId]) {
+                acc[userId] = { totalScore: 0, count: 0 };
+            }
+
+            // Accumulate totalScore and increment count
+            acc[userId].totalScore += punctualityScore;
+            acc[userId].count++;
+
+            // Delete image associated with the user
+            if (image && image.public_id) {
+                deleteImage(image.public_id);
+            }
+
+            // Update the documents to remove the image field
+            Promise.all(attendanceData.map(async (data) => {
+                await dataModel.updateOne({ image: image }, { $unset: { image: 1 } });
+            }));
+
+            return acc;
+        }, {});
+
+        // Prepare assessment data to be saved
+        const savedAssessmentData = Object.keys(aggregatedData).map(userId => {
+            const { totalScore, count } = aggregatedData[userId];
+            const averagePunctualityScore = totalScore / count;
+            return {
+                weekStart: startOfWeek.toISOString().split('T')[0],
+                weekEnd: endOfWeek.toISOString().split('T')[0],
+                averagePunctualityScore: averagePunctualityScore,
+            };
+        });
+
+        // Save assessment data to the database
+        const savedDocuments = await assessmentModel.create(savedAssessmentData);
+
+        if (savedDocuments.length > 0) {
+            savedDocuments[0].userId.push(userId);
+            await savedDocuments[0].save();
+        }
+
+
+        // Return the assessment data
+        return res.status(200).json({
+            message: "Assessment data fetched successfully",
+            data: savedDocuments[0]
+        });
+    } catch (error) {
+        return res.status(500).json({
+            message: 'Internal Server Error: ' + error.message,
+        });
+    }
+};
+
+
+
+// Function to get the assessment for all students by the reviewer
+const assessmentDataS = async (req, res) => {
     try {
         // Get the current date
         const currentDate = new Date();
@@ -241,7 +338,7 @@ const assessmentData = async (req, res) => {
             const { totalScore, count } = aggregatedData[userId];
             const averagePunctualityScore = totalScore / count;
             return {
-                userId,
+                //userId,
                 weekStart: startOfWeek.toISOString().split('T')[0],
                 weekEnd: endOfWeek.toISOString().split('T')[0],
                 averagePunctualityScore: averagePunctualityScore,
@@ -250,6 +347,16 @@ const assessmentData = async (req, res) => {
 
         // Save assessment data to the database
         const savedDocuments = await assessmentModel.create(savedAssessmentData);
+
+        // Iterate over each saved document and push user into userId array
+        for (const savedDocument of savedDocuments) {
+            const userId = savedDocument.userId;
+            const user = await userModel.findById(userId);
+            if (user) {
+                savedDocument.userId.push(user);
+                await savedDocument.save();
+            }
+        }
 
         // Return the assessment data
         return res.status(200).json({
@@ -297,9 +404,34 @@ const fetchCheckInWeekly = async (req, res) => {
             })
         }
 
+        // Aggregate the attendance data to calculate total score and count for a user
+        const aggregatedData = attendanceData.reduce((acc, curr) => {
+            const { userId, punctualityScore } = curr;
+
+            // If userId doesn't exist in accumulator, initialize it with totalScore and count as 0
+            if (!acc[userId]) {
+                acc[userId] = { totalScore: 0, count: 0 };
+            }
+
+            // Accumulate totalScore and increment count
+            acc[userId].totalScore += punctualityScore;
+            acc[userId].count++;
+
+            return acc;
+        }, {});
+
+        const savedAssessmentData = Object.keys(aggregatedData).map(userId => {
+            const { totalScore, count } = aggregatedData[userId];
+            const averagePunctualityScore = totalScore / count;
+
+            return averagePunctualityScore
+        });
+
+
         return res.status(200).json({
             message: "Student attendance data successfully fetched: ",
-            data: attendanceData
+            averagePunctualityScore: savedAssessmentData[0],
+            data: attendanceData,
         });
 
 
@@ -326,12 +458,12 @@ const fetchAllCheckInWeekly = async (req, res) => {
         endOfWeek.setDate(startOfWeek.getDate() + 6);
         endOfWeek.setHours(23, 59, 59, 999);
 
-         // Fetch attendance data for the current week
+        // Fetch attendance data for the current week
         const attendanceData = await dataModel.find({
-        date: {
+            date: {
                 $gte: startOfWeek.toISOString().split('T')[0],
                 $lte: endOfWeek.toISOString().split('T')[0]
-        }
+            }
         });
 
         if (!attendanceData || attendanceData.length === 0) {
@@ -582,6 +714,7 @@ const deleteAssessment = async (req, res) => {
 module.exports = {
     checkIn,
     assessmentData,
+    assessmentDataS,
     fetchCheckInWeekly,
     fetchAllCheckInWeekly,
     fetchAssessmentData,

@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 
 const { signUp, verify, logIn, forgotPassword, resetPasswordPage, resetPassword, signOut, } = require('../controllers/userController');
-const { checkIn, assessmentData, fetchCheckInWeekly, fetchAllCheckInWeekly, fetchAssessmentData, fetchOneAssessmentData, deleteCheckIn, deleteWeekCheckIn, deleteAssessment,  } = require('../controllers/punctualityController');
+const { checkIn, assessmentData, assessmentDataS, fetchCheckInWeekly, fetchAllCheckInWeekly, fetchAssessmentData, fetchOneAssessmentData, deleteCheckIn, deleteWeekCheckIn, deleteAssessment,  } = require('../controllers/punctualityController');
 const { authenticate, } = require("../middleware/authentation");
 
 //endpoint to register a new user
@@ -33,8 +33,11 @@ router.post("/signout", authenticate, signOut);
 //endpoint to add user location and image
 router.post("/checkIn", authenticate, checkIn);
 
-//endpoint to get the students Data and calculate their average punctuality for the current week
-router.get('/assessment', authenticate, assessmentData);
+//endpoint to get a student Data and calculate the average punctuality for the current week
+router.get('/assessment/:userId', authenticate, assessmentData);
+
+//endpoint to get all students Data and calculate their average punctuality for the current week
+router.get('/assessmentAll', authenticate, assessmentDataS);
 
 //endpoint to get a student attendance data
 router.get("/studentAttendance/:userId", authenticate, fetchCheckInWeekly);
