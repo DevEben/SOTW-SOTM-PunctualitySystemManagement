@@ -169,6 +169,54 @@ const monthlyRatingAuto = async (req, res) => {
 };
 
 
+//Function to fetch a monthly rating
+const viewMonthlyRating = async (req, res) => {
+    try {
+        const monthlyRatingId = req.params.monthlyRatingId; 
+        
+        const monthlyRating = await monthlyModel.findById(monthlyRatingId);
+        if (!monthlyRating) {
+            return res.status(404).json({
+                message: "monthlyRating not found!"
+            })
+        }
+
+        return res.status(200).json({
+            message: "Monthly rating fetched successfully!",
+            data: monthlyRating
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            message: "Internal Server Error: " + error.message,
+        });
+    }
+};
+
+
+
+//Function to fetch all monthly ratings
+const viewAllMonthlyRating = async (req, res) => {
+    try {
+        
+        const monthlyRating = await monthlyModel.find();
+        if (!monthlyRating || monthlyRating.length === 0) {
+            return res.status(404).json({
+                message: "monthlyRatings not found!"
+            })
+        }
+
+        return res.status(200).json({
+            message: "Monthly rating fetched successfully!",
+            data: monthlyRating
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            message: "Internal Server Error: " + error.message,
+        });
+    }
+};
 
 
 // Function to select Student of the Month (SOTM) for a specific stack
@@ -464,6 +512,8 @@ const deleteSOTMp = async (req, res) => {
 module.exports = {
     monthlyRating,
     monthlyRatingAuto,
+    viewMonthlyRating, 
+    viewAllMonthlyRating,
     SOTM,
     viewSOTM,
     viewAllSOTM,
