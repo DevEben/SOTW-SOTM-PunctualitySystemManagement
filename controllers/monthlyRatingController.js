@@ -172,9 +172,9 @@ const monthlyRatingAuto = async (req, res) => {
 //Function to fetch a monthly rating
 const viewMonthlyRating = async (req, res) => {
     try {
-        const monthlyRatingId = req.params.monthlyRatingId; 
+        const userId = req.params.userId; 
         
-        const monthlyRating = await monthlyModel.findById(monthlyRatingId);
+        const monthlyRating = await monthlyModel.findOne({student: { $in: [ userId] }}).populate('student');
         if (!monthlyRating) {
             return res.status(404).json({
                 message: "monthlyRating not found!"
@@ -199,7 +199,7 @@ const viewMonthlyRating = async (req, res) => {
 const viewAllMonthlyRating = async (req, res) => {
     try {
         
-        const monthlyRating = await monthlyModel.find();
+        const monthlyRating = await monthlyModel.find().sort({createdAt: -1}).populate('student');
         if (!monthlyRating || monthlyRating.length === 0) {
             return res.status(404).json({
                 message: "monthlyRatings not found!"
@@ -217,6 +217,40 @@ const viewAllMonthlyRating = async (req, res) => {
         });
     }
 };
+
+
+
+//Function to delete a monthly rating
+const deleteMonthlyRating = async (req, res) => {
+    try {
+        const userId = req.params.userId; 
+        
+        const monthlyRating = await monthlyModel.findOne({student: { $in: [ userId] }}).populate('student');
+        if (!monthlyRating) {
+            return res.status(404).json({
+                message: "monthlyRating not found!"
+            })
+        }
+
+        const deleteMonthlyRating = await monthlyModel.findOneAndDelete({student: { $in: [ userId] }});
+        if (!deleteMonthlyRating) {
+            return res.status(400).json({
+                message: "Unable to delete student monthly rating"
+            })
+        };
+
+        return res.status(200).json({
+            message: "Monthly rating deleted successfully!",
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            message: "Internal Server Error: " + error.message,
+        });
+    }
+};
+
+
 
 
 // Function to select Student of the Month (SOTM) for a specific stack
@@ -514,6 +548,7 @@ module.exports = {
     monthlyRatingAuto,
     viewMonthlyRating, 
     viewAllMonthlyRating,
+    deleteMonthlyRating,
     SOTM,
     viewSOTM,
     viewAllSOTM,

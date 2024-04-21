@@ -2,7 +2,7 @@ const express = require('express');
 
 const router = express.Router();
 
-const { monthlyRating, monthlyRatingAuto, viewMonthlyRating, viewAllMonthlyRating, SOTM, viewSOTM, viewAllSOTM, deleteSOTMb, deleteSOTMf, deleteSOTMp, } = require('../controllers/monthlyRatingController');
+const { monthlyRating, monthlyRatingAuto, viewMonthlyRating, viewAllMonthlyRating, deleteMonthlyRating, SOTM, viewSOTM, viewAllSOTM, deleteSOTMb, deleteSOTMf, deleteSOTMp, } = require('../controllers/monthlyRatingController');
 const { authenticate, } = require("../middleware/authentation");
 
 
@@ -13,10 +13,13 @@ router.get('/monthlyRating/:userId', monthlyRating);
 router.get('/monthlyRating', monthlyRatingAuto);
 
 //endpoint to view a monthly rating
-router.get('/viewMonthlyRating', viewMonthlyRating)
+router.get('/viewMonthlyRating/:userId', viewMonthlyRating)
 
 //endpoint to view all monthly ratings
 router.get('/viewAllMonthlyRating', viewAllMonthlyRating)
+
+//endpoint to delete a monthly rating
+router.delete('/deleteMonthlyRating/:userId', deleteMonthlyRating)
 
 //endpoint to get the student of the month for the each stacks
 router.get('/getSOTM', SOTM); 
