@@ -172,9 +172,9 @@ const monthlyRatingAuto = async (req, res) => {
 //Function to fetch a monthly rating
 const viewMonthlyRating = async (req, res) => {
     try {
-        const userId = req.params.userId; 
-        
-        const monthlyRating = await monthlyModel.findOne({student: { $in: [ userId] }}).populate('student');
+        const userId = req.params.userId;
+
+        const monthlyRating = await monthlyModel.findOne({ student: { $in: [userId] } }).populate('student');
         if (!monthlyRating) {
             return res.status(404).json({
                 message: "monthlyRating not found!"
@@ -198,8 +198,8 @@ const viewMonthlyRating = async (req, res) => {
 //Function to fetch all monthly ratings
 const viewAllMonthlyRating = async (req, res) => {
     try {
-        
-        const monthlyRating = await monthlyModel.find().sort({createdAt: -1}).populate('student');
+
+        const monthlyRating = await monthlyModel.find().sort({ createdAt: -1 }).populate('student');
         if (!monthlyRating || monthlyRating.length === 0) {
             return res.status(404).json({
                 message: "monthlyRatings not found!"
@@ -223,16 +223,16 @@ const viewAllMonthlyRating = async (req, res) => {
 //Function to delete a monthly rating
 const deleteMonthlyRating = async (req, res) => {
     try {
-        const userId = req.params.userId; 
-        
-        const monthlyRating = await monthlyModel.findOne({student: { $in: [ userId] }}).populate('student');
+        const userId = req.params.userId;
+
+        const monthlyRating = await monthlyModel.findOne({ student: { $in: [userId] } }).populate('student');
         if (!monthlyRating) {
             return res.status(404).json({
                 message: "monthlyRating not found!"
             })
         }
 
-        const deleteMonthlyRating = await monthlyModel.findOneAndDelete({student: { $in: [ userId] }});
+        const deleteMonthlyRating = await monthlyModel.findOneAndDelete({ student: { $in: [userId] } });
         if (!deleteMonthlyRating) {
             return res.status(400).json({
                 message: "Unable to delete student monthly rating"
@@ -252,26 +252,120 @@ const deleteMonthlyRating = async (req, res) => {
 
 
 
+//Function to generate all students monthly rating
+const fetchMonthlyRating = async () => {
+    try {
+        const currentDate = new Date();
+        const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+        startOfMonth.setHours(0, 0, 0, 0);
+        const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+        endOfMonth.setHours(23, 59, 59, 999);
+
+        const months = ["January", "February", "March", "April", "May", "June", "July",
+            "August", "September", "October", "November", "December"];
+
+        const students = await userModel.find();
+
+        const monthlyRatings = [];
+        for (const student of students) {
+            const MonthlyRating = await ratingsModel.find({ 
+                student: student._id,
+                createdAt: {
+                    $gte: startOfMonth.toISOString(),
+                    $lte: endOfMonth.toISOString()
+                },
+            });
+
+            const grandTotal = MonthlyRating.reduce((total, rating) => {
+                return total + rating.total;
+            }, 0);
+
+            const averageMonthlyRating = MonthlyRating.length > 0 ? grandTotal / MonthlyRating.length : 0;
+
+            const saveMonthlyRating = {
+                student: student,
+                month: months[currentDate.getMonth()],
+                monthlyRating: averageMonthlyRating,
+            };
+
+            monthlyRatings.push(saveMonthlyRating);
+        }
+
+        return monthlyRatings;
+
+    } catch (error) {
+        throw new Error("Error fetching monthly ratings: " + error.message);
+    }
+};
+
+
+//Function to generate all students monthly rating
+const prevMonthlyRating = async (highScore) => {
+    try {
+        const previousDate = new Date();
+        const startOfMonth = new Date(previousDate.getFullYear(), previousDate.getMonth() - 1, 1);
+        startOfMonth.setHours(0, 0, 0, 0);
+        const endOfMonth = new Date(previousDate.getFullYear(), previousDate.getMonth(), 0);
+        endOfMonth.setHours(23, 59, 59, 999);
+
+        const months = ["January", "February", "March", "April", "May", "June", "July",
+            "August", "September", "October", "November", "December"];
+
+        const userIds = highScore.map(student => student._id);
+
+        const monthlyRatings = [];
+        for (const userId of userIds) {
+            const MonthlyRating = await ratingsModel.find({
+                student: userId,
+                createdAt: {
+                    $gte: startOfMonth.toISOString(),
+                    $lte: endOfMonth.toISOString()
+                },
+            });
+
+            const grandTotal = MonthlyRating.reduce((total, rating) => {
+                return total + rating.total;
+            }, 0);
+
+            const averageMonthlyRating = MonthlyRating.length > 0 ? grandTotal / MonthlyRating.length : 0;
+
+            const saveMonthlyRating = {
+                student: highScore.find(student => student._id === userId),
+                month: months[previousDate.getMonth() - 1 < 0 ? 11 : previousDate.getMonth() - 1],
+                monthlyRating: averageMonthlyRating,
+            };
+
+            monthlyRatings.push(saveMonthlyRating);
+        }
+
+        return monthlyRatings;
+
+    } catch (error) {
+        throw new Error("Error fetching previous monthly ratings: " + error.message);
+    }
+};
+
+
 
 // Function to select Student of the Month (SOTM) for a specific stack
-const selectSOTMForStack = async (stack, monthlyModel, sotwModel) => {
+const selectSOTMForStack = async (stack, sotwModel) => {
     // Fetch students' ratings for the specified stack and month
     const currentDate = new Date();
     const months = [
         "January", "February", "March", "April", "May", "June", "July",
         "August", "September", "October", "November", "December"
     ];
-    const currentMonth = months[currentDate.getMonth()]
+    const currentMonth = months[currentDate.getMonth()];
 
-    const allRatings = await monthlyModel.find({ month: currentMonth }).populate('student');
+    const allRatings = await fetchMonthlyRating();
 
     // Filter ratings by stack and role
     const filterByStack = allRatings.filter(rating => {
         // Check if the student's stack and role match the provided parameters
-        const student = rating.student; // Assuming student is an array of objects
-        const matchingStudent = student.find(s => s.stack === stack && s.role === 'student');
-        return matchingStudent !== undefined; // Return true if the student matches the criteria
+        const student = rating.student;
+        return student.stack === stack && student.role === 'student';
     });
+
 
     // If no students found for the stack, throw an error
     if (filterByStack.length === 0) {
@@ -282,7 +376,7 @@ const selectSOTMForStack = async (stack, monthlyModel, sotwModel) => {
     const getEachScore = filterByStack.map(score => ({
         month: score.month,
         monthlyRating: score.monthlyRating,
-        student: score.student[0]
+        student: score.student // Changed to use score.student directly without [0] index
     }));
 
     // Extract the scores
@@ -292,6 +386,7 @@ const selectSOTMForStack = async (stack, monthlyModel, sotwModel) => {
     // Filter students with the maximum score
     const highScores = getEachScore.filter(score => score.monthlyRating === maxScore);
 
+
     // If there's only one student with the maximum score, return the student and score
     if (highScores.length === 1) {
         return { student: highScores[0].student, score: maxScore };
@@ -299,22 +394,41 @@ const selectSOTMForStack = async (stack, monthlyModel, sotwModel) => {
         let highestPrevMonthScore = [];
         for (const score of highScores) {
             // Find the previous month's score for each student
-            const prevMonthScore = await monthlyModel.findOne({ month: months[currentDate.getMonth() - 1], student: score.student._id });
+            const prevMonthScore = await prevMonthlyRating(highScores);
+
             // Use the previous month's score or default to 0 if not found
-            const totalScore = prevMonthScore ? prevMonthScore.total : 0;
+            const totalScore = prevMonthScore.monthlyRating > 0 ? prevMonthScore.monthlyRating : 0;
             highestPrevMonthScore.push(totalScore);
         }
-        // Find the minimum previous month's score among the high scorers
-        const minPrevMonthScore = Math.max(...highestPrevMonthScore);
-        const minScoreIndex = highestPrevMonthScore.indexOf(minPrevMonthScore);
-        // Return the student with the highest previous month's score
-        return { student: highScores[minScoreIndex].student, score: maxScore };
+
+        // Check if any high scorer has a previous month's score greater than 0
+        const hasPreviousScores = highestPrevMonthScore.some(score => score > 0);
+
+        if (!hasPreviousScores) {
+            // If none of the high scorers have a previous score, randomly select one
+            const index = Math.floor(Math.random() * highScores.length);
+            return { student: highScores[index].student, score: maxScore };
+        } else {
+            // Find the maximum previous month's score among the high scorers
+            const maxPrevMonthScore = Math.max(...highestPrevMonthScore);
+            const maxScoreIndex = highestPrevMonthScore.indexOf(maxPrevMonthScore);
+
+            if (maxPrevMonthScore.length > 1) {
+                // If none of the high scorers have a previous score, randomly select one
+                const index = Math.floor(Math.random() * highScores.length);
+                return { student: highScores[index].student, score: maxScore };
+            } else {
+                // Return the student with the highest previous month's score
+                return { student: highScores[maxScoreIndex].student, score: maxScore };
+            }
+        }
     }
 };
 
 
+
 // Function to select SOTM for a given stack
-const selectSOTM = async (stack, monthlyModel, sotmModel) => {
+const selectSOTM = async (stack, sotmModel) => {
     const currentDate = new Date();
     const months = [
         "January", "February", "March", "April", "May", "June", "July",
@@ -322,7 +436,7 @@ const selectSOTM = async (stack, monthlyModel, sotmModel) => {
     ];
     const currentMonth = months[currentDate.getMonth()]
     // Select SOTM for the specified stack
-    const selectedSOTM = await selectSOTMForStack(stack, monthlyModel, sotmModel);
+    const selectedSOTM = await selectSOTMForStack(stack, sotmModel);
     const { student, score } = selectedSOTM;
 
     // Check if SOTM has already been selected for the month
@@ -344,11 +458,11 @@ const selectSOTM = async (stack, monthlyModel, sotmModel) => {
 const SOTM = async (req, res) => {
     try {
         // Select SOTM for Backend stack
-        const selectedBackendSOTM = await selectSOTM('backend', monthlyModel, backendSOTMModel);
+        const selectedBackendSOTM = await selectSOTM('backend', backendSOTMModel);
         // Select SOTM for Frontend stack
-        const selectedFrontendSOTM = await selectSOTM('frontend', monthlyModel, frontendSOTMModel);
+        const selectedFrontendSOTM = await selectSOTM('frontend', frontendSOTMModel);
         // Select SOTM for Product Design stack
-        const selectedProductSOTM = await selectSOTM('productdesign', monthlyModel, productSOTMModel);
+        const selectedProductSOTM = await selectSOTM('productdesign', productSOTMModel);
 
         // Return successful response with selected SOTW for each stack
         return res.status(200).json({
@@ -546,7 +660,7 @@ const deleteSOTMp = async (req, res) => {
 module.exports = {
     monthlyRating,
     monthlyRatingAuto,
-    viewMonthlyRating, 
+    viewMonthlyRating,
     viewAllMonthlyRating,
     deleteMonthlyRating,
     SOTM,
