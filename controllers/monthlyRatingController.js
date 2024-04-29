@@ -253,16 +253,18 @@ const deleteMonthlyRating = async (req, res) => {
 
 
 //Function to generate all students monthly rating
-const fetchMonthlyRating = async () => {
+const fetchMonthlyRating = async (month) => {
     try {
-        const currentDate = new Date();
-        const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+                const months = ["January", "February", "March", "April", "May", "June", "July",
+            "August", "September", "October", "November", "December"];
+
+            const currentMonth = months.findIndex(m => m === month);
+
+            const startOfMonth = new Date(new Date().getFullYear(), currentMonth, 1);
         startOfMonth.setHours(0, 0, 0, 0);
-        const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+        const endOfMonth = new Date(new Date().getFullYear(), currentMonth + 1, 0);
         endOfMonth.setHours(23, 59, 59, 999);
 
-        const months = ["January", "February", "March", "April", "May", "June", "July",
-            "August", "September", "October", "November", "December"];
 
         const students = await userModel.find();
 
@@ -284,7 +286,7 @@ const fetchMonthlyRating = async () => {
 
             const saveMonthlyRating = {
                 student: student,
-                month: months[currentDate.getMonth()],
+                month: month,
                 monthlyRating: averageMonthlyRating,
             };
 
@@ -300,16 +302,17 @@ const fetchMonthlyRating = async () => {
 
 
 //Function to generate all students monthly rating
-const prevMonthlyRating = async (highScore) => {
+const prevMonthlyRating = async (highScore, month) => {
     try {
-        const previousDate = new Date();
-        const startOfMonth = new Date(previousDate.getFullYear(), previousDate.getMonth() - 1, 1);
-        startOfMonth.setHours(0, 0, 0, 0);
-        const endOfMonth = new Date(previousDate.getFullYear(), previousDate.getMonth(), 0);
-        endOfMonth.setHours(23, 59, 59, 999);
-
-        const months = ["January", "February", "March", "April", "May", "June", "July",
+    const months = ["January", "February", "March", "April", "May", "June", "July",
             "August", "September", "October", "November", "December"];
+
+            const previousMonth = months.findIndex(m => m === month);
+
+            const startOfMonth = new Date(new Date().getFullYear(), previousMonth - 1, 1);
+        startOfMonth.setHours(0, 0, 0, 0);
+        const endOfMonth = new Date(new Date().getFullYear(), previousMonth, 0);
+        endOfMonth.setHours(23, 59, 59, 999);
 
         const userIds = highScore.map(student => student._id);
 
@@ -331,7 +334,7 @@ const prevMonthlyRating = async (highScore) => {
 
             const saveMonthlyRating = {
                 student: highScore.find(student => student._id === userId),
-                month: months[previousDate.getMonth() - 1 < 0 ? 11 : previousDate.getMonth() - 1],
+                month: months[previousMonth - 1 < 0 ? 11 : previousMonth - 1],
                 monthlyRating: averageMonthlyRating,
             };
 
@@ -348,16 +351,16 @@ const prevMonthlyRating = async (highScore) => {
 
 
 // Function to select Student of the Month (SOTM) for a specific stack
-const selectSOTMForStack = async (stack, sotwModel) => {
+const selectSOTMForStack = async (stack, sotwModel, month) => {
     // Fetch students' ratings for the specified stack and month
-    const currentDate = new Date();
     const months = [
         "January", "February", "March", "April", "May", "June", "July",
         "August", "September", "October", "November", "December"
     ];
-    const currentMonth = months[currentDate.getMonth()];
 
-    const allRatings = await fetchMonthlyRating();
+    const currentMonth = months.findIndex(m => m === month);
+
+    const allRatings = await fetchMonthlyRating(month);
 
     // Filter ratings by stack and role
     const filterByStack = allRatings.filter(rating => {
@@ -369,7 +372,7 @@ const selectSOTMForStack = async (stack, sotwModel) => {
 
     // If no students found for the stack, throw an error
     if (filterByStack.length === 0) {
-        throw new Error(`No student found for ${stack} stack in ${currentMonth}!`);
+        throw new Error(`No student found for ${stack} stack in ${months[currentMonth]}!`);
     }
 
     // Map each student's score and information
@@ -394,7 +397,7 @@ const selectSOTMForStack = async (stack, sotwModel) => {
         let highestPrevMonthScore = [];
         for (const score of highScores) {
             // Find the previous month's score for each student
-            const prevMonthScore = await prevMonthlyRating(highScores);
+            const prevMonthScore = await prevMonthlyRating(highScores, month);
 
             // Use the previous month's score or default to 0 if not found
             const totalScore = prevMonthScore.monthlyRating > 0 ? prevMonthScore.monthlyRating : 0;
@@ -428,15 +431,15 @@ const selectSOTMForStack = async (stack, sotwModel) => {
 
 
 // Function to select SOTM for a given stack
-const selectSOTM = async (stack, sotmModel) => {
-    const currentDate = new Date();
+const selectSOTM = async (stack, sotmModel, month) => {
     const months = [
         "January", "February", "March", "April", "May", "June", "July",
         "August", "September", "October", "November", "December"
     ];
-    const currentMonth = months[currentDate.getMonth()]
+    const monthIndex = months.findIndex(m => m === month);
+    const currentMonth = months[monthIndex]
     // Select SOTM for the specified stack
-    const selectedSOTM = await selectSOTMForStack(stack, sotmModel);
+    const selectedSOTM = await selectSOTMForStack(stack, sotmModel, month);
     const { student, score } = selectedSOTM;
 
     // Check if SOTM has already been selected for the month
@@ -457,12 +460,18 @@ const selectSOTM = async (stack, sotmModel) => {
 //Function to get the best student for the month by their stacks
 const SOTM = async (req, res) => {
     try {
+        const { month } = req.body;
+        if (!month) {
+            return res.status(400).json({
+                message: "Month is required in request body."
+            });
+        }
         // Select SOTM for Backend stack
-        const selectedBackendSOTM = await selectSOTM('backend', backendSOTMModel);
+        const selectedBackendSOTM = await selectSOTM('backend', backendSOTMModel, month);
         // Select SOTM for Frontend stack
-        const selectedFrontendSOTM = await selectSOTM('frontend', frontendSOTMModel);
+        const selectedFrontendSOTM = await selectSOTM('frontend', frontendSOTMModel, month);
         // Select SOTM for Product Design stack
-        const selectedProductSOTM = await selectSOTM('productdesign', productSOTMModel);
+        const selectedProductSOTM = await selectSOTM('productdesign', productSOTMModel, month);
 
         // Return successful response with selected SOTW for each stack
         return res.status(200).json({
@@ -476,6 +485,46 @@ const SOTM = async (req, res) => {
         return res.status(500).json({
             message: "Internal Server Error: " + error.message,
         })
+    }
+}
+
+
+//Function to get the best student for the month by their stacks
+const SOTMByStacksAndMonth = async (req, res) => {
+    try {
+        const { month, stack } = req.body;
+        if (!month || !stack) {
+            return res.status(400).json({
+                message: "Month and stack are required in request body."
+            });
+        }
+
+        let stackModel;
+        if (stack === 'backend') {
+            stackModel = backendSOTMModel; 
+        } else if (stack === 'frontend') {
+            stackModel = frontendSOTMModel; 
+        } else if (stack === 'productdesign') {
+            stackModel = productSOTMModel; 
+        } else {
+            return res.status(400).json({
+                message: "Invalid stack provided."
+            });
+        }
+
+        // Select SOTM for the specified stack
+        const selectedSOTM = await selectSOTM(stack, stackModel, month);
+
+        // Return successful response with selected SOTM
+        return res.status(200).json({
+            message: `Student of the month successfully selected for ${stack} stack in ${month}:`,
+            data: selectedSOTM,
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            message: "Internal Server Error: " + error.message,
+        });
     }
 }
 
@@ -664,6 +713,7 @@ module.exports = {
     viewAllMonthlyRating,
     deleteMonthlyRating,
     SOTM,
+    SOTMByStacksAndMonth,
     viewSOTM,
     viewAllSOTM,
     deleteSOTMb,
