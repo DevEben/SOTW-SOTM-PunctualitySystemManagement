@@ -252,37 +252,33 @@ const deleteMonthlyRating = async (req, res) => {
 
 
 
-//Function to generate all students monthly rating
+// Function to generate all students' monthly rating
 const fetchMonthlyRating = async (month) => {
     try {
-                const months = ["January", "February", "March", "April", "May", "June", "July",
+        const months = ["January", "February", "March", "April", "May", "June", "July",
             "August", "September", "October", "November", "December"];
 
-            const currentMonth = months.findIndex(m => m === month);
+        const currentMonth = months.findIndex(m => m === month);
 
-            const startOfMonth = new Date(new Date().getFullYear(), currentMonth, 1);
+        if (currentMonth === -1) {
+            throw new Error("Invalid month name provided.");
+        }
+
+        const startOfMonth = new Date(new Date().getFullYear(), currentMonth, 1);
         startOfMonth.setHours(0, 0, 0, 0);
         const endOfMonth = new Date(new Date().getFullYear(), currentMonth + 1, 0);
         endOfMonth.setHours(23, 59, 59, 999);
-
 
         const students = await userModel.find();
 
         const monthlyRatings = [];
         for (const student of students) {
-            const MonthlyRating = await ratingsModel.find({ 
-                student: student._id,
-                createdAt: {
-                    $gte: startOfMonth.toISOString(),
-                    $lte: endOfMonth.toISOString()
-                },
-            });
+            // Fetch the last four ratings
+            const lastFourRatings = student.allRatings.slice(-4);
 
-            const grandTotal = MonthlyRating.reduce((total, rating) => {
-                return total + rating.total;
-            }, 0);
-
-            const averageMonthlyRating = MonthlyRating.length > 0 ? grandTotal / MonthlyRating.length : 0;
+            // Calculate the average of the last four ratings
+            const totalRatings = lastFourRatings.reduce((total, rating) => total + rating, 0);
+            const averageMonthlyRating = lastFourRatings.length > 0 ? totalRatings / lastFourRatings.length : 0;
 
             const saveMonthlyRating = {
                 student: student,
@@ -301,41 +297,50 @@ const fetchMonthlyRating = async (month) => {
 };
 
 
-//Function to generate all students monthly rating
+
+// Function to generate all students' previous monthly rating
 const prevMonthlyRating = async (highScore, month) => {
     try {
-    const months = ["January", "February", "March", "April", "May", "June", "July",
+        const months = ["January", "February", "March", "April", "May", "June", "July",
             "August", "September", "October", "November", "December"];
 
-            const previousMonth = months.findIndex(m => m === month);
+        const currentMonthIndex = months.findIndex(m => m === month);
+        if (currentMonthIndex === -1) {
+            throw new Error("Invalid month name provided.");
+        }
 
-            const startOfMonth = new Date(new Date().getFullYear(), previousMonth - 1, 1);
-        startOfMonth.setHours(0, 0, 0, 0);
-        const endOfMonth = new Date(new Date().getFullYear(), previousMonth, 0);
-        endOfMonth.setHours(23, 59, 59, 999);
+        const previousMonthIndex = (currentMonthIndex - 1 + 12) % 12;
+        const previousMonth = months[previousMonthIndex];
 
         const userIds = highScore.map(student => student._id);
 
         const monthlyRatings = [];
         for (const userId of userIds) {
-            const MonthlyRating = await ratingsModel.find({
-                student: userId,
-                createdAt: {
-                    $gte: startOfMonth.toISOString(),
-                    $lte: endOfMonth.toISOString()
-                },
-            });
+            const student = await userModel.findById(userId);
+            if (!student) {
+                continue;
+            }
 
-            const grandTotal = MonthlyRating.reduce((total, rating) => {
-                return total + rating.total;
-            }, 0);
+            // Fetch the previous four ratings (before the last four ratings)
+            const allRatings = student.allRatings;
+            const ratingsCount = allRatings.length;
+            
+            if (ratingsCount < 8) {
+                // Ensure there are at least 8 ratings to get the previous four before the last four
+                throw new Error(`Not enough ratings available for student ID ${userId}`);
+            }
 
-            const averageMonthlyRating = MonthlyRating.length > 0 ? grandTotal / MonthlyRating.length : 0;
+            // Fetch the previous four ratings
+            const prevFourRatings = allRatings.slice(-8, -4);
+
+            // Calculate the average of the previous four ratings
+            const totalPrevFourRatings = prevFourRatings.reduce((total, rating) => total + rating, 0);
+            const averagePrevMonthlyRating = prevFourRatings.length > 0 ? totalPrevFourRatings / prevFourRatings.length : 0;
 
             const saveMonthlyRating = {
-                student: highScore.find(student => student._id === userId),
-                month: months[previousMonth - 1 < 0 ? 11 : previousMonth - 1],
-                monthlyRating: averageMonthlyRating,
+                student: student,
+                month: previousMonth,
+                monthlyRating: averagePrevMonthlyRating,
             };
 
             monthlyRatings.push(saveMonthlyRating);
@@ -501,11 +506,11 @@ const SOTMByStacksAndMonth = async (req, res) => {
 
         let stackModel;
         if (stack === 'backend') {
-            stackModel = backendSOTMModel; 
+            stackModel = backendSOTMModel;
         } else if (stack === 'frontend') {
-            stackModel = frontendSOTMModel; 
+            stackModel = frontendSOTMModel;
         } else if (stack === 'productdesign') {
-            stackModel = productSOTMModel; 
+            stackModel = productSOTMModel;
         } else {
             return res.status(400).json({
                 message: "Invalid stack provided."
